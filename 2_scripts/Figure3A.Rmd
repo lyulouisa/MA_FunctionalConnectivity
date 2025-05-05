@@ -1,0 +1,256 @@
+---
+title: "Figure3A"
+author: "Louisa"
+date: "2025-05-04"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# load packages
+```{r}
+rm(list=ls())
+library(tidyverse)
+library(fs)
+library(ggplot2)
+library(dplyr)
+library(broom)
+library(psych)
+library(cowplot)
+
+library(ppcor)
+library(vangogh)
+```
+
+# load data
+```{r}
+#-------------------------------
+# 1) Read and merge the data
+#-------------------------------
+amph_rest <- read.csv("../1_data/subj_network_amph_rest_allNetworks.csv")
+PL_rest   <- read.csv("../1_data/subj_network_PL_rest_allNetworks.csv")
+
+amph_doors <- read.csv("../1_data/subj_network_amph_doors_allNetworks.csv")
+PL_doors   <- read.csv("../1_data/subj_network_PL_doors_allNetworks.csv")
+
+amph_MID <- read.csv("../1_data/subj_network_amph_MID_allNetworks.csv")
+PL_MID   <- read.csv("../1_data/subj_network_PL_MID_allNetworks.csv")
+
+all_doors <- full_join(amph_doors, PL_doors, by = "subID") %>%
+  mutate(doors_att_highLow_diff      = amph_highLow         - PL_highLow,
+         doors_arousal_highLow_diff  = amph_arousal_highLow - PL_arousal_highLow,
+         doors_valence_highLow_diff  = amph_valence_highLow - PL_valence_highLow)
+
+all_MID <- full_join(amph_MID, PL_MID, by = "subID") %>%
+  mutate(MID_att_highLow_diff      = amph_highLow         - PL_highLow,
+         MID_arousal_highLow_diff  = amph_arousal_highLow - PL_arousal_highLow,
+         MID_valence_highLow_diff  = amph_valence_highLow - PL_valence_highLow)
+
+all_rest <- full_join(amph_rest, PL_rest, by = "subID") %>%
+  mutate(rest_att_highLow_diff      = amph_highLow         - PL_highLow,
+         rest_arousal_highLow_diff  = amph_arousal_highLow - PL_arousal_highLow,
+         rest_valence_highLow_diff  = amph_valence_highLow - PL_valence_highLow)
+
+all <- full_join(all_doors, all_MID, by = "subID")
+all <- full_join(all, all_rest, by = "subID")
+all <- all %>% drop_na()
+```
+
+# plotting
+```{r fig.width=12, fig.height=4}
+
+dataset_choice <- "all_rest"  # "all_doors" or "all_MID"
+
+dataset <- switch(
+  dataset_choice,
+  "all_doors" = all_doors,
+  "all_rest"  = all_rest,
+  "all_MID"   = all_MID
+)
+
+#########################################
+## Normalize Attention / Arousal / Valence High-Low ##
+#########################################
+
+## --- Attention (amph_highLow, PL_highLow) ---
+att_values <- c(dataset$amph_highLow, dataset$PL_highLow)
+att_mean   <- mean(att_values, na.rm = TRUE)
+att_sd     <- sd(att_values, na.rm = TRUE)
+dataset$amph_highLow_norm <- (dataset$amph_highLow - att_mean) / att_sd
+dataset$PL_highLow_norm   <- (dataset$PL_highLow   - att_mean) / att_sd
+
+## --- Arousal (amph_arousal_highLow, PL_arousal_highLow) ---
+arousal_values <- c(dataset$amph_arousal_highLow, dataset$PL_arousal_highLow)
+arousal_mean   <- mean(arousal_values, na.rm = TRUE)
+arousal_sd     <- sd(arousal_values, na.rm = TRUE)
+dataset$amph_arousal_highLow_norm <- (dataset$amph_arousal_highLow - arousal_mean) / arousal_sd
+dataset$PL_arousal_highLow_norm   <- (dataset$PL_arousal_highLow   - arousal_mean) / arousal_sd
+
+## --- Valence (amph_valence_highLow, PL_valence_highLow) ---
+valence_values <- c(dataset$amph_valence_highLow, dataset$PL_valence_highLow)
+valence_mean   <- mean(valence_values, na.rm = TRUE)
+valence_sd     <- sd(valence_values, na.rm = TRUE)
+dataset$amph_valence_highLow_norm <- (dataset$amph_valence_highLow - valence_mean) / valence_sd
+dataset$PL_valence_highLow_norm   <- (dataset$PL_valence_highLow   - valence_mean) / valence_sd
+
+#########################################
+## Prepare Data for Plotting (Long) ##
+#########################################
+
+## Helper function for SEM ribbons
+mean_se <- function(x) {
+  m <- mean(x, na.rm = TRUE)
+  se <- sd(x, na.rm = TRUE) / sqrt(sum(!is.na(x)))
+  data.frame(y = m, ymin = m - se, ymax = m + se)
+}
+
+######### Attention #########
+att_data <- dataset %>%
+  dplyr::select(subID, amph_highLow_norm, PL_highLow_norm) %>%
+  pivot_longer(
+    cols = c(amph_highLow_norm, PL_highLow_norm),
+    names_to = "group",
+    values_to = "value"
+  ) %>%
+  mutate(
+    group = ifelse(group == "amph_highLow_norm", "MA", "Placebo"),
+    shape = ifelse(group == "MA", 16, 1)
+  )
+
+# Wide dataset for connecting lines
+att_net_wide <- dataset %>%
+  dplyr::select(subID, amph_highLow_norm, PL_highLow_norm) %>%
+  rename(amph_att_norm = amph_highLow_norm,
+         PL_att_norm   = PL_highLow_norm)
+
+######### Arousal #########
+arousal_data <- dataset %>%
+  dplyr::select(subID, amph_arousal_highLow_norm, PL_arousal_highLow_norm) %>%
+  pivot_longer(
+    cols = c(amph_arousal_highLow_norm, PL_arousal_highLow_norm),
+    names_to = "group",
+    values_to = "value"
+  ) %>%
+  mutate(
+    group = ifelse(group == "amph_arousal_highLow_norm", "MA", "Placebo"),
+    shape = ifelse(group == "MA", 16, 1)
+  )
+
+# Wide for connecting lines
+arousal_net_wide <- dataset %>%
+  dplyr::select(subID, amph_arousal_highLow_norm, PL_arousal_highLow_norm) %>%
+  rename(amph_arousal_norm = amph_arousal_highLow_norm,
+         PL_arousal_norm   = PL_arousal_highLow_norm)
+
+######### Valence #########
+valence_data <- dataset %>%
+  dplyr::select(subID, amph_valence_highLow_norm, PL_valence_highLow_norm) %>%
+  pivot_longer(
+    cols = c(amph_valence_highLow_norm, PL_valence_highLow_norm),
+    names_to = "group",
+    values_to = "value"
+  ) %>%
+  mutate(
+    group = ifelse(group == "amph_valence_highLow_norm", "MA", "Placebo"),
+    shape = ifelse(group == "MA", 16, 1)
+  )
+
+# Wide for connecting lines
+valence_net_wide <- dataset %>%
+  dplyr::select(subID, amph_valence_highLow_norm, PL_valence_highLow_norm) %>%
+  rename(amph_valence_norm = amph_valence_highLow_norm,
+         PL_valence_norm   = PL_valence_highLow_norm)
+
+#################################
+## Define Colors & Plot Them ##
+#################################
+
+att_color     <- "#d1a300"
+arousal_color <- "#8b0000"
+valence_color <- "#4C6643"
+
+# --- Attention Plot ---
+p_attention <- ggplot(att_data, aes(x = group, y = value)) +
+  geom_hline(yintercept = 0, color = "gray30", size = 0.25, alpha = 0.8) +
+  geom_segment(
+    data = att_net_wide,
+    aes(x = "Placebo", xend = "MA", y = PL_att_norm, yend = amph_att_norm),
+    color = "grey", alpha = 0.3
+  ) +
+  geom_jitter(aes(shape = shape), color = att_color, size = 3, alpha = 0.5, width = 0.1) +
+  scale_shape_identity() +
+  stat_summary(fun.data = mean_se, geom = "errorbar", width = 0.1, color = "black") +
+  stat_summary(fun = mean, geom = "crossbar",
+               width = 0.3, fill = "black", alpha = 0.2, color = "black") +
+  labs(x = "", y = "Network Strength (z-score)", title = "Attention Network") +
+  scale_x_discrete(limits = c("Placebo", "MA")) +
+  theme_classic() +
+  theme(
+    legend.position  = "none",
+    axis.title.x     = element_blank(),
+    axis.text.x      = element_text(size = 11, color = "black"),
+    axis.text.y      = element_text(size = 11, color = "black"),
+    axis.title.y     = element_text(size = 12),
+    plot.title       = element_text(size = 14, hjust = 0.5)
+  )
+
+# --- Arousal Plot ---
+p_arousal <- ggplot(arousal_data, aes(x = group, y = value)) +
+  geom_hline(yintercept = 0, color = "gray30", size = 0.25, alpha = 0.8) +
+  geom_segment(
+    data = arousal_net_wide,
+    aes(x = "Placebo", xend = "MA", y = PL_arousal_norm, yend = amph_arousal_norm),
+    color = "grey", alpha = 0.3
+  ) +
+  geom_jitter(aes(shape = shape), color = arousal_color, size = 3, alpha = 0.5, width = 0.1) +
+  scale_shape_identity() +
+  stat_summary(fun.data = mean_se, geom = "errorbar", width = 0.1, color = "black") +
+  stat_summary(fun = mean, geom = "crossbar",
+               width = 0.3, fill = "black", alpha = 0.2, color = "black") +
+  labs(x = "", y = "Network Strength (z-score)", title = "Arousal Network") +
+  scale_x_discrete(limits = c("Placebo", "MA")) +
+  theme_classic() +
+  theme(
+    legend.position  = "none",
+    axis.title.x     = element_blank(),
+    axis.text.x      = element_text(size = 11, color = "black"),
+    axis.text.y      = element_text(size = 11, color = "black"),
+    axis.title.y     = element_text(size = 12),
+    plot.title       = element_text(size = 14, hjust = 0.5)
+  )
+
+# --- Valence Plot ---
+p_valence <- ggplot(valence_data, aes(x = group, y = value)) +
+  geom_hline(yintercept = 0, color = "gray30", size = 0.25, alpha = 0.8) +
+  geom_segment(
+    data = valence_net_wide,
+    aes(x = "Placebo", xend = "MA", y = PL_valence_norm, yend = amph_valence_norm),
+    color = "grey", alpha = 0.3
+  ) +
+  geom_jitter(aes(shape = shape), color = valence_color, size = 3, alpha = 0.5, width = 0.1) +
+  scale_shape_identity() +
+  stat_summary(fun.data = mean_se, geom = "errorbar", width = 0.1, color = "black") +
+  stat_summary(fun = mean, geom = "crossbar",
+               width = 0.3, fill = "black", alpha = 0.2, color = "black") +
+  labs(x = "", y = "Network Strength (z-score)", title = "Valence Network") +
+  scale_x_discrete(limits = c("Placebo", "MA")) +
+  theme_classic() +
+  theme(
+    legend.position  = "none",
+    axis.title.x     = element_blank(),
+    axis.text.x      = element_text(size = 11, color = "black"),
+    axis.text.y      = element_text(size = 11, color = "black"),
+    axis.title.y     = element_text(size = 12),
+    plot.title       = element_text(size = 14, hjust = 0.5)
+  )
+
+plot_grid(p_attention, p_arousal, p_valence, ncol = 3)
+```
+
+```{r}
+t.test(dataset$amph_arousal_highLow, dataset$PL_arousal_highLow, paired = TRUE)
+t.test(dataset$amph_valence_highLow, dataset$PL_valence_highLow, paired = TRUE)
+```
+

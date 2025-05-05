@@ -1,0 +1,255 @@
+---
+title: "Figure1"
+author: "Louisa"
+date: "2025-05-04"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# load packages
+```{r}
+rm(list=ls())
+library(tidyverse)
+library(fs)
+library(ggplot2)
+library(dplyr)
+library(broom)
+library(psych)
+library(cowplot)
+
+library(ppcor)
+library(vangogh)
+```
+
+# load an clean behavioral data
+```{r}
+all_behav <- read.csv("../1_data/gradCPT_behav.csv")
+all_behav <- all_behav %>%
+  rename(subID = SubID)
+
+# remove NaN values
+all_behav <- all_behav[!is.nan(all_behav[, 2]) & !is.nan(all_behav[, 3]), ]
+
+# remove those >2.5 standard deviation away from mean
+all_behav <- all_behav[!(abs(all_behav$amph_gradCPT - mean(all_behav$amph_gradCPT, na.rm = TRUE)) > 2.5 * sd(all_behav$amph_gradCPT, na.rm = TRUE) |
+                              abs(all_behav$PL_gradCPT - mean(all_behav$PL_gradCPT, na.rm = TRUE)) > 2.5 * sd(all_behav$PL_gradCPT, na.rm = TRUE) |
+                         abs(all_behav$o_gradCPT - mean(all_behav$o_gradCPT, na.rm = TRUE)) > 2.5 * sd(all_behav$o_gradCPT, na.rm = TRUE)), ]
+
+```
+
+# split all_behav to high and low
+```{r fig.width=4, fig.height=3.5}
+behav_data <- all_behav %>%
+  dplyr::select(subID, o_gradCPT, PL_gradCPT, amph_gradCPT) %>%
+  pivot_longer(
+    cols = c(o_gradCPT, PL_gradCPT, amph_gradCPT),
+    names_to = "condition",
+    values_to = "gradCPT"
+  )
+
+behav_data <- behav_data %>%
+  drop_na(gradCPT)
+
+# Map condition names to desired labels
+behav_data$condition <- factor(
+  behav_data$condition,
+  levels = c("o_gradCPT", "PL_gradCPT", "amph_gradCPT"),
+  labels = c("Orientation", "Placebo", "Amphetamine")
+)
+
+behav <- ggplot(behav_data, aes(x = condition, y = gradCPT)) +
+  geom_jitter(
+    aes(color = condition),
+    size = 3.5,
+    alpha = 0.6,
+    width = 0.02
+  ) +
+  # Lines connecting observations across conditions
+  geom_line(
+    aes(group = subID),
+    color = "black",
+    alpha = 0.1
+  ) +
+  # Line connecting group means
+  stat_summary(
+    fun = mean,
+    aes(group = 1),
+    geom = "line",
+    color = "black",
+    alpha = 0.8
+  ) +
+  labs(
+    x = "",
+    y = NULL,  # Remove y-axis title if desired
+    title = "Behavioral Performance: Orientation vs. Placebo vs. Amphetamine"
+  ) +
+  scale_color_manual(values = vangogh_palette("CafeDeNuit")) +
+  theme(
+    legend.position = "none",
+    panel.grid = element_blank(),
+    panel.background = element_blank(),
+    axis.line = element_line(color = "black"),
+    axis.text.x = element_text(size = 12, color = "black"),
+    axis.text.y = element_text(size = 16, color = "black"),  # Increased size
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),  # Removed y-axis title
+    plot.title = element_text(size = 16),
+    strip.text.x = element_text(size = 14)
+  )
+
+plot_grid(behav, ncol = 1)
+```
+
+# plotting
+```{r fig.width=8, fig.height=6}
+all_behav_o <- all_behav[order(all_behav$o_gradCPT), ]
+all_behav_o <- na.omit(all_behav_o)
+
+all_behav_low_o <- all_behav_o[1:floor(nrow(all_behav_o) / 2), ]
+all_behav_high_o <- all_behav_o[(floor(nrow(all_behav_o) / 2) + 1):nrow(all_behav_o), ]
+
+all_behav_pl <- all_behav[order(all_behav$PL_gradCPT), ]
+all_behav_pl <- na.omit(all_behav_pl)
+
+all_behav_low_pl <- all_behav_pl[1:floor(nrow(all_behav_pl) / 2), ]
+all_behav_high_pl <- all_behav_pl[(floor(nrow(all_behav_pl) / 2) + 1):nrow(all_behav_pl), ]
+
+
+behav_low_o <- ggplot(all_behav_low_o, aes(x = factor(1), y = PL_gradCPT)) +
+  geom_jitter(color = "#5F7F60", size = 5, alpha = 0.5, shape = 1,
+              position = position_dodge(width = 0.2)) +
+  geom_jitter(aes(x = factor(2), y = amph_gradCPT), #o_gradCPT
+              color = "#5F7F60", size = 5, alpha = 0.5, shape = 16,
+              position = position_dodge(width = 0.2)) +
+  geom_segment(aes(x = factor(1), y = PL_gradCPT, 
+                   xend = factor(2), yend = amph_gradCPT),
+               color = "black", alpha = 0.3) +
+  geom_segment(aes(x = factor(1), y = mean(PL_gradCPT, na.rm = TRUE),
+                   xend = factor(2), yend = mean(amph_gradCPT, na.rm = TRUE)),
+               color = "black", alpha = 1, size = 1) +
+  labs(x = "", y = "D' (d prime)") +
+  scale_x_discrete(labels = c("PL", "MA")) +
+  scale_y_continuous(breaks = c(1, 2, 3, 4, 5)) +
+  theme(legend.position = "none",
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.background = element_blank(),
+        axis.line = element_line(colour = "black"),
+        axis.text.x = element_text(size = 12, color = "black"),
+        axis.text.y = element_text(size = 12, color = "black"),
+        axis.title.x = element_blank(),
+        axis.title.y = element_text(size = 14),
+        plot.title = element_text(size = 16),
+        strip.text.x = element_text(size = 14)) +
+  coord_cartesian(ylim = c(0, 5.4))
+
+
+behav_high_o <- ggplot(all_behav_high_o, aes(x = factor(1), y = PL_gradCPT)) +
+  geom_jitter(color = "#354345", size = 5, alpha = 0.5, shape = 1,
+              position = position_dodge(width = 0.2)) +
+  geom_jitter(aes(x = factor(2), y = amph_gradCPT), 
+              color = "#354345", size = 5, alpha = 0.5, shape = 16,
+              position = position_dodge(width = 0.2)) +
+  geom_segment(aes(x = factor(1), y = PL_gradCPT, 
+                   xend = factor(2), yend = amph_gradCPT),
+               color = "black", alpha = 0.3) +
+  geom_segment(aes(x = factor(1), y = mean(PL_gradCPT, na.rm = TRUE),
+                   xend = factor(2), yend = mean(amph_gradCPT, na.rm = TRUE)),
+               color = "black", alpha = 1, size = 1) +
+  labs(x = "", y = "D' (d prime)") +
+  scale_x_discrete(labels = c("PL", "MA")) +
+  scale_y_continuous(breaks = c(1, 2, 3, 4, 5)) +
+  theme(legend.position = "none",
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.background = element_blank(),
+        axis.line = element_line(colour = "black"),
+        axis.text.x = element_text(size = 12, color = "black"),
+        axis.text.y = element_text(size = 12, color = "black"),
+        axis.title.x = element_blank(),
+        axis.title.y = element_text(size = 14),
+        plot.title = element_text(size = 16),
+        strip.text.x = element_text(size = 14)) +
+  coord_cartesian(ylim = c(0, 5.4))
+
+
+behav_low_PL <- ggplot(all_behav_low_pl, aes(x = factor(1), y = PL_gradCPT)) +
+  geom_jitter(color = "#e6bc47", size = 5, alpha = 0.5, shape = 1,
+              position = position_dodge(width = 0.2)) +
+  geom_jitter(aes(x = factor(2), y = amph_gradCPT), 
+              color = "#e6bc47", size = 5, alpha = 0.5, shape = 16,
+              position = position_dodge(width = 0.2)) +
+  geom_segment(aes(x = factor(1), y = PL_gradCPT, 
+                   xend = factor(2), yend = amph_gradCPT),
+               color = "black", alpha = 0.3) +
+  geom_segment(aes(x = factor(1), y = mean(PL_gradCPT, na.rm = TRUE),
+                   xend = factor(2), yend = mean(amph_gradCPT, na.rm = TRUE)),
+               color = "black", alpha = 1, size = 1) +
+  labs(x = "", y = "D' (d prime)") +
+  scale_x_discrete(labels = c("PL", "MA")) +
+  scale_y_continuous(breaks = c(1, 2, 3, 4, 5)) +
+  theme(legend.position = "none",
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.background = element_blank(),
+        axis.line = element_line(colour = "black"),
+        axis.text.x = element_text(size = 12, color = "black"),
+        axis.text.y = element_text(size = 12, color = "black"),
+        axis.title.x = element_blank(),
+        axis.title.y = element_text(size = 14),
+        plot.title = element_text(size = 16),
+        strip.text.x = element_text(size = 14)) +
+  coord_cartesian(ylim = c(0, 5.4))
+
+
+behav_high_PL <- ggplot(all_behav_high_pl, aes(x = factor(1), y = PL_gradCPT)) +
+  geom_jitter(color = "#d18f23", size = 5, alpha = 0.5, shape = 1,
+              position = position_dodge(width = 0.2)) +
+  geom_jitter(aes(x = factor(2), y = amph_gradCPT), 
+              color = "#d18f23", size = 5, alpha = 0.5, shape = 16,
+              position = position_dodge(width = 0.2)) +
+  geom_segment(aes(x = factor(1), y = PL_gradCPT, 
+                   xend = factor(2), yend = amph_gradCPT),
+               color = "black", alpha = 0.3) +
+  geom_segment(aes(x = factor(1), y = mean(PL_gradCPT, na.rm = TRUE),
+                   xend = factor(2), yend = mean(amph_gradCPT, na.rm = TRUE)),
+               color = "black", alpha = 1, size = 1) +
+  labs(x = "", y = "D' (d prime)") +
+  scale_x_discrete(labels = c("PL", "MA")) +
+  scale_y_continuous(breaks = c(1, 2, 3, 4, 5)) +
+  theme(legend.position = "none",
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.background = element_blank(),
+        axis.line = element_line(colour = "black"),
+        axis.text.x = element_text(size = 12, color = "black"),
+        axis.text.y = element_text(size = 12, color = "black"),
+        axis.title.x = element_blank(),
+        axis.title.y = element_text(size = 14),
+        plot.title = element_text(size = 16),
+        strip.text.x = element_text(size = 14)) +
+  coord_cartesian(ylim = c(0, 5.4))
+
+
+plot_grid(behav_low_o, behav_high_o, behav_low_PL, behav_high_PL, ncol = 2)
+```
+
+# t test statistics
+```{r}
+t.test(all_behav_high_o$o_gradCPT, all_behav_high_o$PL_gradCPT, paired = TRUE)
+
+t.test(all_behav_low_o$o_gradCPT, all_behav_low_o$PL_gradCPT, paired = TRUE)
+
+t.test(all_behav_high_pl$o_gradCPT, all_behav_high_pl$PL_gradCPT, paired = TRUE)
+
+t.test(all_behav_low_pl$o_gradCPT, all_behav_low_pl$PL_gradCPT, paired = TRUE)
+
+
+t.test(all_behav$o_gradCPT, all_behav$PL_gradCPT, paired = TRUE)
+t.test(all_behav$o_gradCPT, all_behav$amph_gradCPT, paired = TRUE)
+t.test(all_behav$amph_gradCPT, all_behav$PL_gradCPT, paired = TRUE)
+```
+

@@ -1,0 +1,937 @@
+---
+title: "Figure2"
+author: "Louisa"
+date: "2025-05-04"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# load packages
+```{r}
+rm(list=ls())
+library(tidyverse)
+library(fs)
+library(ggplot2)
+library(dplyr)
+library(broom)
+library(psych)
+library(cowplot)
+
+library(ppcor)
+library(vangogh)
+```
+
+# loading neural data
+```{r}
+#-------------------------------
+# 1) Read and merge the data
+#-------------------------------
+amph_rest <- read.csv("../1_data/subj_network_amph_rest_allNetworks.csv")
+PL_rest   <- read.csv("../1_data/subj_network_PL_rest_allNetworks.csv")
+
+amph_doors <- read.csv("../1_data/subj_network_amph_doors_allNetworks.csv")
+PL_doors   <- read.csv("../1_data/subj_network_PL_doors_allNetworks.csv")
+
+amph_MID <- read.csv("../1_data/subj_network_amph_MID_allNetworks.csv")
+PL_MID   <- read.csv("../1_data/subj_network_PL_MID_allNetworks.csv")
+
+all_doors <- full_join(amph_doors, PL_doors, by = "subID") %>%
+  mutate(doors_att_highLow_diff      = amph_highLow         - PL_highLow,
+         doors_arousal_highLow_diff  = amph_arousal_highLow - PL_arousal_highLow,
+         doors_valence_highLow_diff  = amph_valence_highLow - PL_valence_highLow)
+
+all_MID <- full_join(amph_MID, PL_MID, by = "subID") %>%
+  mutate(MID_att_highLow_diff      = amph_highLow         - PL_highLow,
+         MID_arousal_highLow_diff  = amph_arousal_highLow - PL_arousal_highLow,
+         MID_valence_highLow_diff  = amph_valence_highLow - PL_valence_highLow)
+
+all_rest <- full_join(amph_rest, PL_rest, by = "subID") %>%
+  mutate(rest_att_highLow_diff      = amph_highLow         - PL_highLow,
+         rest_arousal_highLow_diff  = amph_arousal_highLow - PL_arousal_highLow,
+         rest_valence_highLow_diff  = amph_valence_highLow - PL_valence_highLow)
+
+all <- full_join(all_doors, all_MID, by = "subID")
+all <- full_join(all, all_rest, by = "subID")
+all <- all %>% drop_na()
+```
+
+# Change in attention network strength correlate with change in CPT performance
+```{r}
+
+all_rest  <- all_rest  %>% drop_na()
+all_MID   <- all_MID   %>% drop_na()
+all_doors <- all_doors %>% drop_na()
+
+compute_correlation <- function(delta_behav, delta_connectivity, label) {
+  result <- cor.test(delta_behav, delta_connectivity, method = "pearson")
+  cat("\n=== Correlation for", label, "===\n")
+  print(result)
+}
+
+# REST
+delta_behav_rest <- all_rest$behav_amph - all_rest$behav_PL
+delta_conn_rest  <- all_rest$rest_att_highLow_diff
+compute_correlation(delta_behav_rest, delta_conn_rest, "REST")
+
+# MID
+delta_behav_MID <- all_MID$behav_amph - all_MID$behav_PL
+delta_conn_MID  <- all_MID$MID_att_highLow_diff
+compute_correlation(delta_behav_MID, delta_conn_MID, "MID")
+
+# DOORS
+delta_behav_doors <- all_doors$behav_amph - all_doors$behav_PL
+delta_conn_doors  <- all_doors$doors_att_highLow_diff
+compute_correlation(delta_behav_doors, delta_conn_doors, "DOORS")
+```
+
+# loading behavioral data
+```{r}
+all_behav <- read.csv("../1_data/gradCPT_behav.csv")
+all_behav <- all_behav %>%
+  rename(subID = SubID)
+
+# remove NaN values
+all_behav <- all_behav[!is.nan(all_behav[, 2]) & !is.nan(all_behav[, 3]), ]
+
+# remove those >2.5 standard deviation away from mean
+all_behav <- all_behav[!(abs(all_behav$amph_gradCPT - mean(all_behav$amph_gradCPT, na.rm = TRUE)) > 2.5 * sd(all_behav$amph_gradCPT, na.rm = TRUE) |
+                              abs(all_behav$PL_gradCPT - mean(all_behav$PL_gradCPT, na.rm = TRUE)) > 2.5 * sd(all_behav$PL_gradCPT, na.rm = TRUE) |
+                         abs(all_behav$o_gradCPT - mean(all_behav$o_gradCPT, na.rm = TRUE)) > 2.5 * sd(all_behav$o_gradCPT, na.rm = TRUE)), ]
+```
+
+# plotting
+```{r, fig.width=10, fig.height=4}
+# Step 1: Normalize the data within each plot
+# High-attention network
+dataset_choice <- "all_rest"  # "all_rest" or "all_MID"
+
+# Step 2: Use a switch statement to assign the chosen dataset
+dataset <- switch(dataset_choice,
+                  "all_doors" = all_doors,
+                  "all_rest" = all_rest,
+                  "all_MID" = all_MID)
+
+# High-attention network normalization
+high_values <- c(dataset$amph_high, dataset$PL_high)
+high_mean <- mean(high_values, na.rm = TRUE)
+high_sd <- sd(high_values, na.rm = TRUE)
+dataset$amph_high_norm <- (dataset$amph_high - high_mean) / high_sd
+dataset$PL_high_norm <- (dataset$PL_high - high_mean) / high_sd
+
+# Low-attention network normalization
+low_values <- c(dataset$amph_low, dataset$PL_low)
+low_mean <- mean(low_values, na.rm = TRUE)
+low_sd <- sd(low_values, na.rm = TRUE)
+dataset$amph_low_norm <- (dataset$amph_low - low_mean) / low_sd
+dataset$PL_low_norm <- (dataset$PL_low - low_mean) / low_sd
+
+# High - Low attention network normalization
+highlow_values <- c(dataset$amph_highLow, dataset$PL_highLow)
+highlow_mean <- mean(highlow_values, na.rm = TRUE)
+highlow_sd <- sd(highlow_values, na.rm = TRUE)
+dataset$amph_highLow_norm <- (dataset$amph_highLow - highlow_mean) / highlow_sd
+dataset$PL_highLow_norm <- (dataset$PL_highLow - highlow_mean) / highlow_sd
+
+# Calculate means for the mean connecting line in each plot
+high_placebo_mean <- mean(dataset$PL_high_norm, na.rm = TRUE)
+high_amphetamine_mean <- mean(dataset$amph_high_norm, na.rm = TRUE)
+low_placebo_mean <- mean(dataset$PL_low_norm, na.rm = TRUE)
+low_amphetamine_mean <- mean(dataset$amph_low_norm, na.rm = TRUE)
+highlow_placebo_mean <- mean(dataset$PL_highLow_norm, na.rm = TRUE)
+highlow_amphetamine_mean <- mean(dataset$amph_highLow_norm, na.rm = TRUE)
+
+# Prepare data for plotting (long format)
+# Note: "Placebo" will be on the left (shape = 1) and "MA" on the right (shape = 16)
+high_net_data <- dataset %>%
+  dplyr::select(subID, amph_high_norm, PL_high_norm) %>%
+  pivot_longer(cols = c(amph_high_norm, PL_high_norm), names_to = "variable", values_to = "value") %>%
+  mutate(
+    group = ifelse(variable == "amph_high_norm", "MA", "Placebo"),
+    shape = ifelse(group == "MA", 16, 1)
+  )
+
+low_net_data <- dataset %>%
+  dplyr::select(subID, amph_low_norm, PL_low_norm) %>%
+  pivot_longer(cols = c(amph_low_norm, PL_low_norm), names_to = "variable", values_to = "value") %>%
+  mutate(
+    group = ifelse(variable == "amph_low_norm", "MA", "Placebo"),
+    shape = ifelse(group == "MA", 16, 1)
+  )
+
+highlow_net_data <- dataset %>%
+  dplyr::select(subID, amph_highLow_norm, PL_highLow_norm) %>%
+  pivot_longer(cols = c(amph_highLow_norm, PL_highLow_norm), names_to = "variable", values_to = "value") %>%
+  mutate(
+    group = ifelse(variable == "amph_highLow_norm", "MA", "Placebo"),
+    shape = ifelse(group == "MA", 16, 1)
+  )
+
+# Create separate wide datasets for the segment layers (to connect Placebo and Amphetamine values per subject)
+high_net_wide <- dataset %>% dplyr::select(subID, PL_high_norm, amph_high_norm)
+low_net_wide <- dataset %>% dplyr::select(subID, PL_low_norm, amph_low_norm)
+highlow_net_wide <- dataset %>% dplyr::select(subID, PL_highLow_norm, amph_highLow_norm)
+
+# Define custom colors (for the jitter points and summaries)
+high_color <- "#d18f23"   # original high color
+low_color <- "#306692"    # original low color
+highlow_color <- "#4C6643" # original high-low color
+
+# High-attention network plot
+high_net <- ggplot(high_net_data, aes(x = group, y = value)) +
+  geom_hline(yintercept = 0, color = "black", size = 0.25, alpha = 0.8) +
+  # Draw individual connecting lines in gray
+  geom_segment(data = high_net_wide,
+               aes(x = "Placebo", xend = "MA",
+                   y = PL_high_norm, yend = amph_high_norm),
+               color = "grey", alpha = 0.3) +
+  # Draw mean connecting line in black
+  geom_segment(aes(x = "Placebo", xend = "MA",
+                   y = high_placebo_mean, yend = high_amphetamine_mean),
+               color = "black", alpha = 1, size = 1) +
+  geom_jitter(aes(shape = shape), color = high_color, size = 3, alpha = 0.5, width = 0.1) +
+  scale_shape_identity() +
+  stat_summary(fun.data = mean_se, geom = "errorbar", width = 0.1, color = "black") +
+  stat_summary(fun = mean, geom = "crossbar", width = 0.3, fill = "black", alpha = 0.2, color = "black") +
+  ylim(-3, 3) +
+  labs(x = "", y = "Normalized High-Attention Network Strength", title = "High Attention Network") +
+  scale_x_discrete(limits = c("Placebo", "MA")) +
+  theme_classic() +
+  theme(
+    legend.position = "none",
+    axis.title.x = element_blank(),
+    axis.text.x = element_text(size = 12, color = "black"),
+    axis.ticks.x = element_blank(),
+    axis.line.x = element_blank(),
+    axis.text.y = element_text(size = 12, color = "black"),
+    axis.title.y = element_text(size = 14),
+    plot.title = element_text(size = 14, hjust = 0.5)
+  )
+
+# Low-attention network plot
+low_net <- ggplot(low_net_data, aes(x = group, y = value)) +
+  geom_hline(yintercept = 0, color = "black", size = 0.25, alpha = 0.8) +
+  geom_segment(data = low_net_wide,
+               aes(x = "Placebo", xend = "MA",
+                   y = PL_low_norm, yend = amph_low_norm),
+               color = "grey", alpha = 0.3) +
+  geom_segment(aes(x = "Placebo", xend = "MA",
+                   y = low_placebo_mean, yend = low_amphetamine_mean),
+               color = "black", alpha = 1, size = 1) +
+  geom_jitter(aes(shape = shape), color = low_color, size = 3, alpha = 0.5, width = 0.1) +
+  scale_shape_identity() +
+  stat_summary(fun.data = mean_se, geom = "errorbar", width = 0.1, color = "black") +
+  stat_summary(fun = mean, geom = "crossbar", width = 0.3, fill = "black", alpha = 0.2, color = "black") +
+  ylim(-3, 3) +
+  labs(x = "", y = "Normalized Low-Attention Network Strength", title = "Low Attention Network") +
+  scale_x_discrete(limits = c("Placebo", "MA")) +
+  theme_classic() +
+  theme(
+    legend.position = "none",
+    axis.title.x = element_blank(),
+    axis.text.x = element_text(size = 12, color = "black"),
+    axis.ticks.x = element_blank(),
+    axis.line.x = element_blank(),
+    axis.text.y = element_text(size = 12, color = "black"),
+    axis.title.y = element_text(size = 14),
+    plot.title = element_text(size = 14, hjust = 0.5)
+  )
+
+# High - Low attention network plot
+highlow_net <- ggplot(highlow_net_data, aes(x = group, y = value)) +
+  geom_hline(yintercept = 0, color = "black", size = 0.25, alpha = 0.8) +
+  geom_segment(data = highlow_net_wide,
+               aes(x = "Placebo", xend = "MA",
+                   y = PL_highLow_norm, yend = amph_highLow_norm),
+               color = "grey", alpha = 0.3) +
+  geom_segment(aes(x = "Placebo", xend = "MA",
+                   y = highlow_placebo_mean, yend = highlow_amphetamine_mean),
+               color = "black", alpha = 1, size = 1) +
+  geom_jitter(aes(shape = shape), color = highlow_color, size = 3, alpha = 0.5, width = 0.1) +
+  scale_shape_identity() +
+  stat_summary(fun.data = mean_se, geom = "errorbar", width = 0.1, color = "black") +
+  stat_summary(fun = mean, geom = "crossbar", width = 0.3, fill = "black", alpha = 0.2, color = "black") +
+  ylim(-3, 3) +
+  labs(x = "", y = "Normalized High - Low Attention Network Strength", title = "High - Low Attention Network") +
+  scale_x_discrete(limits = c("Placebo", "MA")) +
+  theme_classic() +
+  theme(
+    legend.position = "none",
+    axis.title.x = element_blank(),
+    axis.text.x = element_text(size = 12, color = "black"),
+    axis.ticks.x = element_blank(),
+    axis.line.x = element_blank(),
+    axis.text.y = element_text(size = 12, color = "black"),
+    axis.title.y = element_text(size = 14),
+    plot.title = element_text(size = 14, hjust = 0.5)
+  )
+
+# Combine the plots
+plot_grid(high_net, low_net, highlow_net, ncol = 3)
+```
+```{r}
+t.test(dataset$amph_high, dataset$PL_high, paired = TRUE)
+t.test(dataset$amph_low, dataset$PL_low, paired = TRUE)
+```
+
+
+```{r, fig.width=10, fig.height=4}
+# Step 1: Normalize the data within each plot
+# High-attention network
+dataset_choice <- "all_MID"  # "all_rest" or "all_MID"
+
+# Step 2: Use a switch statement to assign the chosen dataset
+dataset <- switch(dataset_choice,
+                  "all_doors" = all_doors,
+                  "all_rest" = all_rest,
+                  "all_MID" = all_MID)
+
+# High-attention network normalization
+high_values <- c(dataset$amph_high, dataset$PL_high)
+high_mean <- mean(high_values, na.rm = TRUE)
+high_sd <- sd(high_values, na.rm = TRUE)
+dataset$amph_high_norm <- (dataset$amph_high - high_mean) / high_sd
+dataset$PL_high_norm <- (dataset$PL_high - high_mean) / high_sd
+
+# Low-attention network normalization
+low_values <- c(dataset$amph_low, dataset$PL_low)
+low_mean <- mean(low_values, na.rm = TRUE)
+low_sd <- sd(low_values, na.rm = TRUE)
+dataset$amph_low_norm <- (dataset$amph_low - low_mean) / low_sd
+dataset$PL_low_norm <- (dataset$PL_low - low_mean) / low_sd
+
+# High - Low attention network normalization
+highlow_values <- c(dataset$amph_highLow, dataset$PL_highLow)
+highlow_mean <- mean(highlow_values, na.rm = TRUE)
+highlow_sd <- sd(highlow_values, na.rm = TRUE)
+dataset$amph_highLow_norm <- (dataset$amph_highLow - highlow_mean) / highlow_sd
+dataset$PL_highLow_norm <- (dataset$PL_highLow - highlow_mean) / highlow_sd
+
+# Calculate means for the mean connecting line in each plot
+high_placebo_mean <- mean(dataset$PL_high_norm, na.rm = TRUE)
+high_amphetamine_mean <- mean(dataset$amph_high_norm, na.rm = TRUE)
+low_placebo_mean <- mean(dataset$PL_low_norm, na.rm = TRUE)
+low_amphetamine_mean <- mean(dataset$amph_low_norm, na.rm = TRUE)
+highlow_placebo_mean <- mean(dataset$PL_highLow_norm, na.rm = TRUE)
+highlow_amphetamine_mean <- mean(dataset$amph_highLow_norm, na.rm = TRUE)
+
+# Prepare data for plotting (long format)
+# Note: "Placebo" will be on the left (shape = 1) and "MA" on the right (shape = 16)
+high_net_data <- dataset %>%
+  dplyr::select(subID, amph_high_norm, PL_high_norm) %>%
+  pivot_longer(cols = c(amph_high_norm, PL_high_norm), names_to = "variable", values_to = "value") %>%
+  mutate(
+    group = ifelse(variable == "amph_high_norm", "MA", "Placebo"),
+    shape = ifelse(group == "MA", 16, 1)
+  )
+
+low_net_data <- dataset %>%
+  dplyr::select(subID, amph_low_norm, PL_low_norm) %>%
+  pivot_longer(cols = c(amph_low_norm, PL_low_norm), names_to = "variable", values_to = "value") %>%
+  mutate(
+    group = ifelse(variable == "amph_low_norm", "MA", "Placebo"),
+    shape = ifelse(group == "MA", 16, 1)
+  )
+
+highlow_net_data <- dataset %>%
+  dplyr::select(subID, amph_highLow_norm, PL_highLow_norm) %>%
+  pivot_longer(cols = c(amph_highLow_norm, PL_highLow_norm), names_to = "variable", values_to = "value") %>%
+  mutate(
+    group = ifelse(variable == "amph_highLow_norm", "MA", "Placebo"),
+    shape = ifelse(group == "MA", 16, 1)
+  )
+
+# Create separate wide datasets for the segment layers (to connect Placebo and MA values per subject)
+high_net_wide <- dataset %>% dplyr::select(subID, PL_high_norm, amph_high_norm)
+low_net_wide <- dataset %>% dplyr::select(subID, PL_low_norm, amph_low_norm)
+highlow_net_wide <- dataset %>% dplyr::select(subID, PL_highLow_norm, amph_highLow_norm)
+
+# Define custom colors (for the jitter points and summaries)
+high_color <- "#d18f23"   # original high color
+low_color <- "#306692"    # original low color
+highlow_color <- "#4C6643" # original high-low color
+
+# High-attention network plot
+high_net <- ggplot(high_net_data, aes(x = group, y = value)) +
+  geom_hline(yintercept = 0, color = "black", size = 0.25, alpha = 0.8) +
+  # Draw individual connecting lines in gray
+  geom_segment(data = high_net_wide,
+               aes(x = "Placebo", xend = "MA",
+                   y = PL_high_norm, yend = amph_high_norm),
+               color = "grey", alpha = 0.3) +
+  # Draw mean connecting line in black
+  geom_segment(aes(x = "Placebo", xend = "MA",
+                   y = high_placebo_mean, yend = high_amphetamine_mean),
+               color = "black", alpha = 1, size = 1) +
+  geom_jitter(aes(shape = shape), color = high_color, size = 3, alpha = 0.5, width = 0.1) +
+  scale_shape_identity() +
+  stat_summary(fun.data = mean_se, geom = "errorbar", width = 0.1, color = "black") +
+  stat_summary(fun = mean, geom = "crossbar", width = 0.3, fill = "black", alpha = 0.2, color = "black") +
+  ylim(-3, 3) +
+  labs(x = "", y = "Normalized High-Attention Network Strength", title = "High Attention Network") +
+  scale_x_discrete(limits = c("Placebo", "MA")) +
+  theme_classic() +
+  theme(
+    legend.position = "none",
+    axis.title.x = element_blank(),
+    axis.text.x = element_text(size = 12, color = "black"),
+    axis.ticks.x = element_blank(),
+    axis.line.x = element_blank(),
+    axis.text.y = element_text(size = 12, color = "black"),
+    axis.title.y = element_text(size = 14),
+    plot.title = element_text(size = 14, hjust = 0.5)
+  )
+
+# Low-attention network plot
+low_net <- ggplot(low_net_data, aes(x = group, y = value)) +
+  geom_hline(yintercept = 0, color = "black", size = 0.25, alpha = 0.8) +
+  geom_segment(data = low_net_wide,
+               aes(x = "Placebo", xend = "MA",
+                   y = PL_low_norm, yend = amph_low_norm),
+               color = "grey", alpha = 0.3) +
+  geom_segment(aes(x = "Placebo", xend = "MA",
+                   y = low_placebo_mean, yend = low_amphetamine_mean),
+               color = "black", alpha = 1, size = 1) +
+  geom_jitter(aes(shape = shape), color = low_color, size = 3, alpha = 0.5, width = 0.1) +
+  scale_shape_identity() +
+  stat_summary(fun.data = mean_se, geom = "errorbar", width = 0.1, color = "black") +
+  stat_summary(fun = mean, geom = "crossbar", width = 0.3, fill = "black", alpha = 0.2, color = "black") +
+  ylim(-3, 3) +
+  labs(x = "", y = "Normalized Low-Attention Network Strength", title = "Low Attention Network") +
+  scale_x_discrete(limits = c("Placebo", "MA")) +
+  theme_classic() +
+  theme(
+    legend.position = "none",
+    axis.title.x = element_blank(),
+    axis.text.x = element_text(size = 12, color = "black"),
+    axis.ticks.x = element_blank(),
+    axis.line.x = element_blank(),
+    axis.text.y = element_text(size = 12, color = "black"),
+    axis.title.y = element_text(size = 14),
+    plot.title = element_text(size = 14, hjust = 0.5)
+  )
+
+# High - Low attention network plot
+highlow_net <- ggplot(highlow_net_data, aes(x = group, y = value)) +
+  geom_hline(yintercept = 0, color = "black", size = 0.25, alpha = 0.8) +
+  geom_segment(data = highlow_net_wide,
+               aes(x = "Placebo", xend = "MA",
+                   y = PL_highLow_norm, yend = amph_highLow_norm),
+               color = "grey", alpha = 0.3) +
+  geom_segment(aes(x = "Placebo", xend = "MA",
+                   y = highlow_placebo_mean, yend = highlow_amphetamine_mean),
+               color = "black", alpha = 1, size = 1) +
+  geom_jitter(aes(shape = shape), color = highlow_color, size = 3, alpha = 0.5, width = 0.1) +
+  scale_shape_identity() +
+  stat_summary(fun.data = mean_se, geom = "errorbar", width = 0.1, color = "black") +
+  stat_summary(fun = mean, geom = "crossbar", width = 0.3, fill = "black", alpha = 0.2, color = "black") +
+  ylim(-3, 3) +
+  labs(x = "", y = "Normalized High - Low Attention Network Strength", title = "High - Low Attention Network") +
+  scale_x_discrete(limits = c("Placebo", "MA")) +
+  theme_classic() +
+  theme(
+    legend.position = "none",
+    axis.title.x = element_blank(),
+    axis.text.x = element_text(size = 12, color = "black"),
+    axis.ticks.x = element_blank(),
+    axis.line.x = element_blank(),
+    axis.text.y = element_text(size = 12, color = "black"),
+    axis.title.y = element_text(size = 14),
+    plot.title = element_text(size = 14, hjust = 0.5)
+  )
+
+# Combine the plots
+plot_grid(high_net, low_net, highlow_net, ncol = 3)
+```
+
+```{r}
+t.test(dataset$amph_high, dataset$PL_high, paired = TRUE)
+t.test(dataset$amph_low, dataset$PL_low, paired = TRUE)
+```
+
+
+```{r, fig.width=10, fig.height=4}
+# Step 1: Normalize the data within each plot
+# High-attention network
+dataset_choice <- "all_doors"  # "all_rest" or "all_MID"
+
+# Step 2: Use a switch statement to assign the chosen dataset
+dataset <- switch(dataset_choice,
+                  "all_doors" = all_doors,
+                  "all_rest" = all_rest,
+                  "all_MID" = all_MID)
+
+# High-attention network normalization
+high_values <- c(dataset$amph_high, dataset$PL_high)
+high_mean <- mean(high_values, na.rm = TRUE)
+high_sd <- sd(high_values, na.rm = TRUE)
+dataset$amph_high_norm <- (dataset$amph_high - high_mean) / high_sd
+dataset$PL_high_norm <- (dataset$PL_high - high_mean) / high_sd
+
+# Low-attention network normalization
+low_values <- c(dataset$amph_low, dataset$PL_low)
+low_mean <- mean(low_values, na.rm = TRUE)
+low_sd <- sd(low_values, na.rm = TRUE)
+dataset$amph_low_norm <- (dataset$amph_low - low_mean) / low_sd
+dataset$PL_low_norm <- (dataset$PL_low - low_mean) / low_sd
+
+# High - Low attention network normalization
+highlow_values <- c(dataset$amph_highLow, dataset$PL_highLow)
+highlow_mean <- mean(highlow_values, na.rm = TRUE)
+highlow_sd <- sd(highlow_values, na.rm = TRUE)
+dataset$amph_highLow_norm <- (dataset$amph_highLow - highlow_mean) / highlow_sd
+dataset$PL_highLow_norm <- (dataset$PL_highLow - highlow_mean) / highlow_sd
+
+# Calculate means for the mean connecting line in each plot
+high_placebo_mean <- mean(dataset$PL_high_norm, na.rm = TRUE)
+high_amphetamine_mean <- mean(dataset$amph_high_norm, na.rm = TRUE)
+low_placebo_mean <- mean(dataset$PL_low_norm, na.rm = TRUE)
+low_amphetamine_mean <- mean(dataset$amph_low_norm, na.rm = TRUE)
+highlow_placebo_mean <- mean(dataset$PL_highLow_norm, na.rm = TRUE)
+highlow_amphetamine_mean <- mean(dataset$amph_highLow_norm, na.rm = TRUE)
+
+# Prepare data for plotting (long format)
+# Note: "Placebo" will be on the left (shape = 1) and "MA" on the right (shape = 16)
+high_net_data <- dataset %>%
+  dplyr::select(subID, amph_high_norm, PL_high_norm) %>%
+  pivot_longer(cols = c(amph_high_norm, PL_high_norm), names_to = "variable", values_to = "value") %>%
+  mutate(
+    group = ifelse(variable == "amph_high_norm", "MA", "Placebo"),
+    shape = ifelse(group == "MA", 16, 1)
+  )
+
+low_net_data <- dataset %>%
+  dplyr::select(subID, amph_low_norm, PL_low_norm) %>%
+  pivot_longer(cols = c(amph_low_norm, PL_low_norm), names_to = "variable", values_to = "value") %>%
+  mutate(
+    group = ifelse(variable == "amph_low_norm", "MA", "Placebo"),
+    shape = ifelse(group == "MA", 16, 1)
+  )
+
+highlow_net_data <- dataset %>%
+  dplyr::select(subID, amph_highLow_norm, PL_highLow_norm) %>%
+  pivot_longer(cols = c(amph_highLow_norm, PL_highLow_norm), names_to = "variable", values_to = "value") %>%
+  mutate(
+    group = ifelse(variable == "amph_highLow_norm", "MA", "Placebo"),
+    shape = ifelse(group == "MA", 16, 1)
+  )
+
+# Create separate wide datasets for the segment layers (to connect Placebo and MA values per subject)
+high_net_wide <- dataset %>% dplyr::select(subID, PL_high_norm, amph_high_norm)
+low_net_wide <- dataset %>% dplyr::select(subID, PL_low_norm, amph_low_norm)
+highlow_net_wide <- dataset %>% dplyr::select(subID, PL_highLow_norm, amph_highLow_norm)
+
+# Define custom colors (for the jitter points and summaries)
+high_color <- "#d18f23"   # original high color
+low_color <- "#306692"    # original low color
+highlow_color <- "#4C6643" # original high-low color
+
+# High-attention network plot
+high_net <- ggplot(high_net_data, aes(x = group, y = value)) +
+  geom_hline(yintercept = 0, color = "black", size = 0.25, alpha = 0.8) +
+  # Draw individual connecting lines in gray
+  geom_segment(data = high_net_wide,
+               aes(x = "Placebo", xend = "MA",
+                   y = PL_high_norm, yend = amph_high_norm),
+               color = "grey", alpha = 0.3) +
+  # Draw mean connecting line in black
+  geom_segment(aes(x = "Placebo", xend = "MA",
+                   y = high_placebo_mean, yend = high_amphetamine_mean),
+               color = "black", alpha = 1, size = 1) +
+  geom_jitter(aes(shape = shape), color = high_color, size = 3, alpha = 0.5, width = 0.1) +
+  scale_shape_identity() +
+  stat_summary(fun.data = mean_se, geom = "errorbar", width = 0.1, color = "black") +
+  stat_summary(fun = mean, geom = "crossbar", width = 0.3, fill = "black", alpha = 0.2, color = "black") +
+  ylim(-3, 3) +
+  labs(x = "", y = "Normalized High-Attention Network Strength", title = "High Attention Network") +
+  scale_x_discrete(limits = c("Placebo", "MA")) +
+  theme_classic() +
+  theme(
+    legend.position = "none",
+    axis.title.x = element_blank(),
+    axis.text.x = element_text(size = 12, color = "black"),
+    axis.ticks.x = element_blank(),
+    axis.line.x = element_blank(),
+    axis.text.y = element_text(size = 12, color = "black"),
+    axis.title.y = element_text(size = 14),
+    plot.title = element_text(size = 14, hjust = 0.5)
+  )
+
+# Low-attention network plot
+low_net <- ggplot(low_net_data, aes(x = group, y = value)) +
+  geom_hline(yintercept = 0, color = "black", size = 0.25, alpha = 0.8) +
+  geom_segment(data = low_net_wide,
+               aes(x = "Placebo", xend = "MA",
+                   y = PL_low_norm, yend = amph_low_norm),
+               color = "grey", alpha = 0.3) +
+  geom_segment(aes(x = "Placebo", xend = "MA",
+                   y = low_placebo_mean, yend = low_amphetamine_mean),
+               color = "black", alpha = 1, size = 1) +
+  geom_jitter(aes(shape = shape), color = low_color, size = 3, alpha = 0.5, width = 0.1) +
+  scale_shape_identity() +
+  stat_summary(fun.data = mean_se, geom = "errorbar", width = 0.1, color = "black") +
+  stat_summary(fun = mean, geom = "crossbar", width = 0.3, fill = "black", alpha = 0.2, color = "black") +
+  ylim(-3, 3) +
+  labs(x = "", y = "Normalized Low-Attention Network Strength", title = "Low Attention Network") +
+  scale_x_discrete(limits = c("Placebo", "MA")) +
+  theme_classic() +
+  theme(
+    legend.position = "none",
+    axis.title.x = element_blank(),
+    axis.text.x = element_text(size = 12, color = "black"),
+    axis.ticks.x = element_blank(),
+    axis.line.x = element_blank(),
+    axis.text.y = element_text(size = 12, color = "black"),
+    axis.title.y = element_text(size = 14),
+    plot.title = element_text(size = 14, hjust = 0.5)
+  )
+
+# High - Low attention network plot
+highlow_net <- ggplot(highlow_net_data, aes(x = group, y = value)) +
+  geom_hline(yintercept = 0, color = "black", size = 0.25, alpha = 0.8) +
+  geom_segment(data = highlow_net_wide,
+               aes(x = "Placebo", xend = "MA",
+                   y = PL_highLow_norm, yend = amph_highLow_norm),
+               color = "grey", alpha = 0.3) +
+  geom_segment(aes(x = "Placebo", xend = "MA",
+                   y = highlow_placebo_mean, yend = highlow_amphetamine_mean),
+               color = "black", alpha = 1, size = 1) +
+  geom_jitter(aes(shape = shape), color = highlow_color, size = 3, alpha = 0.5, width = 0.1) +
+  scale_shape_identity() +
+  stat_summary(fun.data = mean_se, geom = "errorbar", width = 0.1, color = "black") +
+  stat_summary(fun = mean, geom = "crossbar", width = 0.3, fill = "black", alpha = 0.2, color = "black") +
+  ylim(-3, 3) +
+  labs(x = "", y = "Normalized High - Low Attention Network Strength", title = "High - Low Attention Network") +
+  scale_x_discrete(limits = c("Placebo", "MA")) +
+  theme_classic() +
+  theme(
+    legend.position = "none",
+    axis.title.x = element_blank(),
+    axis.text.x = element_text(size = 12, color = "black"),
+    axis.ticks.x = element_blank(),
+    axis.line.x = element_blank(),
+    axis.text.y = element_text(size = 12, color = "black"),
+    axis.title.y = element_text(size = 14),
+    plot.title = element_text(size = 14, hjust = 0.5)
+  )
+
+# Combine the plots
+plot_grid(high_net, low_net, highlow_net, ncol = 3)
+```
+
+
+```{r}
+t.test(dataset$amph_high, dataset$PL_high, paired = TRUE)
+t.test(dataset$amph_low, dataset$PL_low, paired = TRUE)
+```
+
+
+# high-low net split by behav_PL (dprime under placebo condition)
+```{r, fig.width=6, fig.height=3}
+dataset_choice <- "all_rest"  # "all_doors" or "all_MID"
+
+# Use a switch statement to assign the chosen dataset
+dataset <- switch(dataset_choice,
+                  "all_doors" = all_doors,
+                  "all_rest" = all_rest,
+                  "all_MID" = all_MID)
+
+# Finding common subID between the dataset and all_behav
+common_subID <- inner_join(dataset, all_behav, by = "subID") %>%
+  pull(subID)
+
+# Filter the chosen dataset and behavioral data by common subID
+dataset <- dataset %>%
+  filter(subID %in% common_subID)
+
+all_behav_filtered <- all_behav %>%
+  filter(subID %in% common_subID)
+
+# Join the filtered behavioral data with the dataset
+dataset <- full_join(dataset, all_behav_filtered, by = "subID")
+
+# Step 4: Sort the dataset by o_gradCPT and handle missing data
+dataset <- dataset[order(dataset$o_gradCPT), ]
+dataset <- na.omit(dataset)
+
+# Split the dataset into low and high groups
+dataset_low <- dataset[1:floor(nrow(dataset) / 2), ]
+dataset_high <- dataset[(floor(nrow(dataset) / 2) + 1):nrow(dataset), ]
+
+# Step 5: Normalize the data for the low group
+low_values <- c(dataset_low$amph_highLow, dataset_low$PL_highLow)
+low_mean <- mean(low_values, na.rm = TRUE)
+low_sd <- sd(low_values, na.rm = TRUE)
+
+dataset_low$amph_highLow_norm <- (dataset_low$amph_highLow - low_mean) / low_sd
+dataset_low$PL_highLow_norm <- (dataset_low$PL_highLow - low_mean) / low_sd
+
+# Normalize data for the high group
+high_values <- c(dataset_high$amph_highLow, dataset_high$PL_highLow)
+high_mean <- mean(high_values, na.rm = TRUE)
+high_sd <- sd(high_values, na.rm = TRUE)
+
+dataset_high$amph_highLow_norm <- (dataset_high$amph_highLow - high_mean) / high_sd
+dataset_high$PL_highLow_norm <- (dataset_high$PL_highLow - high_mean) / high_sd
+
+# Step 6: Plot the high-low attention network for the low group
+# Now, Placebo (PL_highLow_norm, shape = 1) is on the left and 
+# Amphetamine (amph_highLow_norm, shape = 16) is on the right.
+highlow_LOW <- ggplot(dataset_low, aes(x = factor(1), y = PL_highLow_norm)) +
+  geom_jitter(shape = 1, color = "#5F7F60", size = 5, alpha = 0.5, position = position_dodge(width = 0.2)) +
+  geom_jitter(aes(x = factor(2), y = amph_highLow_norm),
+              shape = 16, color = "#5F7F60", size = 5, alpha = 0.5, position = position_dodge(width = 0.2)) +
+  geom_segment(aes(x = factor(1), y = PL_highLow_norm, xend = factor(2), yend = amph_highLow_norm), 
+               color = "black", alpha = 0.3) +
+  geom_segment(aes(x = factor(1), y = mean(PL_highLow_norm), xend = factor(2), yend = mean(amph_highLow_norm)), 
+               color = "black", alpha = 1, size = 1) +
+  labs(x = "", y = "Normalized High - Low-Attention Network Strength", 
+       title = "High - Low Attention Network (Low)") +
+  scale_x_discrete(labels = c("Placebo", "MA")) +
+  theme(legend.position = "none", panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(), panel.background = element_blank(), 
+        axis.line = element_line(color = "black"),
+        axis.text.x = element_text(size = 12, color = "black"), 
+        axis.text.y = element_text(size = 12, color = "black"), 
+        axis.title.x = element_blank(), axis.title.y = element_text(size = 14),
+        plot.title = element_text(size = 10), strip.text.x = element_text(size = 14))+
+  coord_cartesian(ylim = c(-3, 2.2))
+
+# Step 7: Plot the high-low attention network for the high group
+highlow_HIGH <- ggplot(dataset_high, aes(x = factor(1), y = PL_highLow_norm)) +
+  geom_jitter(shape = 1, color = "#354345", size = 5, alpha = 0.5, position = position_dodge(width = 0.2)) +
+  geom_jitter(aes(x = factor(2), y = amph_highLow_norm), shape = 16, color = "#354345", 
+              size = 5, alpha = 0.5, position = position_dodge(width = 0.2)) +
+  geom_segment(aes(x = factor(1), y = PL_highLow_norm, xend = factor(2), yend = amph_highLow_norm), 
+               color = "black", alpha = 0.3) +
+  geom_segment(aes(x = factor(1), y = mean(PL_highLow_norm), xend = factor(2), yend = mean(amph_highLow_norm)),
+               color = "black", alpha = 1, size = 1) +
+  labs(x = "", y = "Normalized High - Low-Attention Network Strength", title = "High - Low Attention Network (High)") +
+  scale_x_discrete(labels = c("Placebo", "MA")) +
+  theme(legend.position = "none", panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(), panel.background = element_blank(), 
+        axis.line = element_line(color = "black"),
+        axis.text.x = element_text(size = 12, color = "black"), 
+        axis.text.y = element_text(size = 12, color = "black"), 
+        axis.title.x = element_blank(), axis.title.y = element_text(size = 14),
+        plot.title = element_text(size = 10), strip.text.x = element_text(size = 14))+
+  coord_cartesian(ylim = c(-3, 2.2))
+
+plot_grid(highlow_LOW, highlow_HIGH, ncol = 2)
+```
+```{r}
+t.test(dataset_high$amph_highLow, dataset_high$PL_highLow, paired = TRUE)
+
+t.test(dataset_low$amph_highLow, dataset_low$PL_highLow, paired = TRUE)
+```
+
+```{r, fig.width=6, fig.height=3}
+dataset_choice <- "all_MID"  # "all_doors" or "all_MID"
+
+# Use a switch statement to assign the chosen dataset
+dataset <- switch(dataset_choice,
+                  "all_doors" = all_doors,
+                  "all_rest" = all_rest,
+                  "all_MID" = all_MID)
+
+# Finding common subID between the dataset and all_behav
+common_subID <- inner_join(dataset, all_behav, by = "subID") %>%
+  pull(subID)
+
+# Filter the chosen dataset and behavioral data by common subID
+dataset <- dataset %>%
+  filter(subID %in% common_subID)
+
+all_behav_filtered <- all_behav %>%
+  filter(subID %in% common_subID)
+
+# Join the filtered behavioral data with the dataset
+dataset <- full_join(dataset, all_behav_filtered, by = "subID")
+
+# Step 4: Sort the dataset by o_gradCPT and handle missing data
+dataset <- dataset[order(dataset$o_gradCPT), ]
+dataset <- na.omit(dataset)
+
+# Split the dataset into low and high groups
+dataset_low <- dataset[1:floor(nrow(dataset) / 2), ]
+dataset_high <- dataset[(floor(nrow(dataset) / 2) + 1):nrow(dataset), ]
+
+# Step 5: Normalize the data for the low group
+low_values <- c(dataset_low$amph_highLow, dataset_low$PL_highLow)
+low_mean <- mean(low_values, na.rm = TRUE)
+low_sd <- sd(low_values, na.rm = TRUE)
+
+dataset_low$amph_highLow_norm <- (dataset_low$amph_highLow - low_mean) / low_sd
+dataset_low$PL_highLow_norm <- (dataset_low$PL_highLow - low_mean) / low_sd
+
+# Normalize data for the high group
+high_values <- c(dataset_high$amph_highLow, dataset_high$PL_highLow)
+high_mean <- mean(high_values, na.rm = TRUE)
+high_sd <- sd(high_values, na.rm = TRUE)
+
+dataset_high$amph_highLow_norm <- (dataset_high$amph_highLow - high_mean) / high_sd
+dataset_high$PL_highLow_norm <- (dataset_high$PL_highLow - high_mean) / high_sd
+
+# Step 6: Plot the high-low attention network for the low group
+# Now, Placebo (PL_highLow_norm, shape = 1) is on the left and 
+# Amphetamine (amph_highLow_norm, shape = 16) is on the right.
+highlow_LOW <- ggplot(dataset_low, aes(x = factor(1), y = PL_highLow_norm)) +
+  geom_jitter(shape = 1, color = "#5F7F60", size = 5, alpha = 0.5, position = position_dodge(width = 0.2)) +
+  geom_jitter(aes(x = factor(2), y = amph_highLow_norm),
+              shape = 16, color = "#5F7F60", size = 5, alpha = 0.5, position = position_dodge(width = 0.2)) +
+  geom_segment(aes(x = factor(1), y = PL_highLow_norm, xend = factor(2), yend = amph_highLow_norm), 
+               color = "black", alpha = 0.3) +
+  geom_segment(aes(x = factor(1), y = mean(PL_highLow_norm), xend = factor(2), yend = mean(amph_highLow_norm)), 
+               color = "black", alpha = 1, size = 1) +
+  labs(x = "", y = "Normalized High - Low-Attention Network Strength", 
+       title = "High - Low Attention Network (Low)") +
+  scale_x_discrete(labels = c("Placebo", "MA")) +
+  theme(legend.position = "none", panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(), panel.background = element_blank(), 
+        axis.line = element_line(color = "black"),
+        axis.text.x = element_text(size = 12, color = "black"), 
+        axis.text.y = element_text(size = 12, color = "black"), 
+        axis.title.x = element_blank(), axis.title.y = element_text(size = 14),
+        plot.title = element_text(size = 10), strip.text.x = element_text(size = 14))+
+  coord_cartesian(ylim = c(-3, 2.2))
+
+# Step 7: Plot the high-low attention network for the high group
+highlow_HIGH <- ggplot(dataset_high, aes(x = factor(1), y = PL_highLow_norm)) +
+  geom_jitter(shape = 1, color = "#354345", size = 5, alpha = 0.5, position = position_dodge(width = 0.2)) +
+  geom_jitter(aes(x = factor(2), y = amph_highLow_norm), shape = 16, color = "#354345", 
+              size = 5, alpha = 0.5, position = position_dodge(width = 0.2)) +
+  geom_segment(aes(x = factor(1), y = PL_highLow_norm, xend = factor(2), yend = amph_highLow_norm), 
+               color = "black", alpha = 0.3) +
+  geom_segment(aes(x = factor(1), y = mean(PL_highLow_norm), xend = factor(2), yend = mean(amph_highLow_norm)),
+               color = "black", alpha = 1, size = 1) +
+  labs(x = "", y = "Normalized High - Low-Attention Network Strength", title = "High - Low Attention Network (High)") +
+  scale_x_discrete(labels = c("Placebo", "MA")) +
+  theme(legend.position = "none", panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(), panel.background = element_blank(), 
+        axis.line = element_line(color = "black"),
+        axis.text.x = element_text(size = 12, color = "black"), 
+        axis.text.y = element_text(size = 12, color = "black"), 
+        axis.title.x = element_blank(), axis.title.y = element_text(size = 14),
+        plot.title = element_text(size = 10), strip.text.x = element_text(size = 14))+
+  coord_cartesian(ylim = c(-3, 2.2))
+
+plot_grid(highlow_LOW, highlow_HIGH, ncol = 2)
+```
+
+```{r, fig.width=6, fig.height=3}
+dataset_choice <- "all_doors"  # "all_doors" or "all_MID"
+
+# Use a switch statement to assign the chosen dataset
+dataset <- switch(dataset_choice,
+                  "all_doors" = all_doors,
+                  "all_rest" = all_rest,
+                  "all_MID" = all_MID)
+
+# Finding common subID between the dataset and all_behav
+common_subID <- inner_join(dataset, all_behav, by = "subID") %>%
+  pull(subID)
+
+# Filter the chosen dataset and behavioral data by common subID
+dataset <- dataset %>%
+  filter(subID %in% common_subID)
+
+all_behav_filtered <- all_behav %>%
+  filter(subID %in% common_subID)
+
+# Join the filtered behavioral data with the dataset
+dataset <- full_join(dataset, all_behav_filtered, by = "subID")
+
+# Step 4: Sort the dataset by o_gradCPT and handle missing data
+dataset <- dataset[order(dataset$o_gradCPT), ]
+dataset <- na.omit(dataset)
+
+# Split the dataset into low and high groups
+dataset_low <- dataset[1:floor(nrow(dataset) / 2), ]
+dataset_high <- dataset[(floor(nrow(dataset) / 2) + 1):nrow(dataset), ]
+
+# Step 5: Normalize the data for the low group
+low_values <- c(dataset_low$amph_highLow, dataset_low$PL_highLow)
+low_mean <- mean(low_values, na.rm = TRUE)
+low_sd <- sd(low_values, na.rm = TRUE)
+
+dataset_low$amph_highLow_norm <- (dataset_low$amph_highLow - low_mean) / low_sd
+dataset_low$PL_highLow_norm <- (dataset_low$PL_highLow - low_mean) / low_sd
+
+# Normalize data for the high group
+high_values <- c(dataset_high$amph_highLow, dataset_high$PL_highLow)
+high_mean <- mean(high_values, na.rm = TRUE)
+high_sd <- sd(high_values, na.rm = TRUE)
+
+dataset_high$amph_highLow_norm <- (dataset_high$amph_highLow - high_mean) / high_sd
+dataset_high$PL_highLow_norm <- (dataset_high$PL_highLow - high_mean) / high_sd
+
+# Step 6: Plot the high-low attention network for the low group
+# Now, Placebo (PL_highLow_norm, shape = 1) is on the left and 
+# Amphetamine (amph_highLow_norm, shape = 16) is on the right.
+highlow_LOW <- ggplot(dataset_low, aes(x = factor(1), y = PL_highLow_norm)) +
+  geom_jitter(shape = 1, color = "#5F7F60", size = 5, alpha = 0.5, position = position_dodge(width = 0.2)) +
+  geom_jitter(aes(x = factor(2), y = amph_highLow_norm),
+              shape = 16, color = "#5F7F60", size = 5, alpha = 0.5, position = position_dodge(width = 0.2)) +
+  geom_segment(aes(x = factor(1), y = PL_highLow_norm, xend = factor(2), yend = amph_highLow_norm), 
+               color = "black", alpha = 0.3) +
+  geom_segment(aes(x = factor(1), y = mean(PL_highLow_norm), xend = factor(2), yend = mean(amph_highLow_norm)), 
+               color = "black", alpha = 1, size = 1) +
+  labs(x = "", y = "Normalized High - Low-Attention Network Strength", 
+       title = "High - Low Attention Network (Low)") +
+  scale_x_discrete(labels = c("Placebo", "MA")) +
+  theme(legend.position = "none", panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(), panel.background = element_blank(), 
+        axis.line = element_line(color = "black"),
+        axis.text.x = element_text(size = 12, color = "black"), 
+        axis.text.y = element_text(size = 12, color = "black"), 
+        axis.title.x = element_blank(), axis.title.y = element_text(size = 14),
+        plot.title = element_text(size = 10), strip.text.x = element_text(size = 14))+
+  coord_cartesian(ylim = c(-3, 2.2))
+
+# Step 7: Plot the high-low attention network for the high group
+highlow_HIGH <- ggplot(dataset_high, aes(x = factor(1), y = PL_highLow_norm)) +
+  geom_jitter(shape = 1, color = "#354345", size = 5, alpha = 0.5, position = position_dodge(width = 0.2)) +
+  geom_jitter(aes(x = factor(2), y = amph_highLow_norm), shape = 16, color = "#354345", 
+              size = 5, alpha = 0.5, position = position_dodge(width = 0.2)) +
+  geom_segment(aes(x = factor(1), y = PL_highLow_norm, xend = factor(2), yend = amph_highLow_norm), 
+               color = "black", alpha = 0.3) +
+  geom_segment(aes(x = factor(1), y = mean(PL_highLow_norm), xend = factor(2), yend = mean(amph_highLow_norm)),
+               color = "black", alpha = 1, size = 1) +
+  labs(x = "", y = "Normalized High - Low-Attention Network Strength", title = "High - Low Attention Network (High)") +
+  scale_x_discrete(labels = c("Placebo", "MA")) +
+  theme(legend.position = "none", panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(), panel.background = element_blank(), 
+        axis.line = element_line(color = "black"),
+        axis.text.x = element_text(size = 12, color = "black"), 
+        axis.text.y = element_text(size = 12, color = "black"), 
+        axis.title.x = element_blank(), axis.title.y = element_text(size = 14),
+        plot.title = element_text(size = 10), strip.text.x = element_text(size = 14))+
+  coord_cartesian(ylim = c(-3, 2.2))
+
+plot_grid(highlow_LOW, highlow_HIGH, ncol = 2)
+```
+
+
+```{r}
+t.test(dataset_high$amph_highLow, dataset_high$PL_highLow, paired = TRUE)
+t.test(dataset_low$amph_highLow, dataset_low$PL_highLow, paired = TRUE)
+```
+
+# Whether magnitude of MA-induced changes in attention network strength depended on attentional performance under placebo
+```{r}
+all_doors <- all_doors %>% drop_na()
+all_MID <- all_MID %>% drop_na()
+all_rest <- all_rest %>% drop_na()
+
+cor_result <- cor.test(all_rest$rest_att_highLow_diff, all_rest$behav_PL, method = "pearson")
+print(cor_result)
+
+cor_result <- cor.test(all_MID$MID_att_highLow_diff, all_MID$behav_PL, method = "pearson")
+print(cor_result)
+
+cor_result <- cor.test(all_doors$doors_att_highLow_diff, all_doors$behav_PL, method = "pearson")
+print(cor_result)
+```
+
