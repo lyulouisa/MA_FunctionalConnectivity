@@ -3,7 +3,6 @@ import joblib
 import matplotlib.pyplot as plt
 import os
 
-# Load edges_used_array
 edges_used_array = joblib.load('../3_results/edges_used_rest.pkl')
 print(f"Loaded edges_used_array with shape: {edges_used_array.shape}")
 
@@ -58,7 +57,6 @@ plt.xlabel('Brain Regions')
 plt.ylabel('Brain Regions')
 plt.show()
 
-# Save matrices in ASCII format
 output_directory = '../3_results/stats/'
 os.makedirs(output_directory, exist_ok=True)
 np.savetxt(os.path.join(output_directory, 'network_diff_positive_rest.txt'), positive_edge_matrix, fmt='%d')
@@ -70,36 +68,29 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.colors import to_rgba
 
-# --------------------------- data --------------------------------- #
+
 cm = np.array([[75, 17],
                [11, 71]])
 
 accuracy = (cm[0, 0] + cm[1, 1]) / cm.sum()
-
-# Color bases
 green_hex = "#759116"
 red_hex   = "#bf1029"
-
-# Maximum values for scaling
 max_green = cm[[0, 1], [0, 1]].max()
 max_red   = cm[[0, 1], [1, 0]].max()
+color_img = np.zeros((2, 2, 4))
 
-# Pre‑compute RGBA colors with alpha scaling
-color_img = np.zeros((2, 2, 4))  # include alpha channel
-
-for (i, j) in [(0, 0), (1, 1)]:               # correct predictions
-    alpha = cm[i, j] / max_green              # 0–1
+for (i, j) in [(0, 0), (1, 1)]:
+    alpha = cm[i, j] / max_green
     color_img[i, j] = to_rgba(green_hex, alpha)
 
-for (i, j) in [(0, 1), (1, 0)]:               # errors
-    alpha = cm[i, j] / max_red                # 0–1
+for (i, j) in [(0, 1), (1, 0)]:
+    alpha = cm[i, j] / max_red
     color_img[i, j] = to_rgba(red_hex, alpha)
 
 # ------------------------- plotting ------------------------------- #
 fig, ax = plt.subplots(figsize=(5, 4))
 ax.imshow(color_img, interpolation='nearest')
 
-# Text labels
 classes = ['Placebo', 'Amphetamine']
 for i in range(2):
     for j in range(2):
