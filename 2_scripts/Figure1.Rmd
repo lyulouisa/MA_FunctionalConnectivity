@@ -176,20 +176,20 @@ behav_high_o <- ggplot(all_behav_high_o, aes(x = factor(1), y = PL_gradCPT)) +
   coord_cartesian(ylim = c(0, 5.4))
 
 
-behav_low_PL <- ggplot(all_behav_low_pl, aes(x = factor(1), y = PL_gradCPT)) +
+behav_low_PL <- ggplot(all_behav_low_pl, aes(x = factor(1), y = o_gradCPT)) +
   geom_jitter(color = "#e6bc47", size = 5, alpha = 0.5, shape = 1,
               position = position_dodge(width = 0.2)) +
   geom_jitter(aes(x = factor(2), y = amph_gradCPT), 
               color = "#e6bc47", size = 5, alpha = 0.5, shape = 16,
               position = position_dodge(width = 0.2)) +
-  geom_segment(aes(x = factor(1), y = PL_gradCPT, 
+  geom_segment(aes(x = factor(1), y = o_gradCPT, 
                    xend = factor(2), yend = amph_gradCPT),
                color = "black", alpha = 0.3) +
-  geom_segment(aes(x = factor(1), y = mean(PL_gradCPT, na.rm = TRUE),
+  geom_segment(aes(x = factor(1), y = mean(o_gradCPT, na.rm = TRUE),
                    xend = factor(2), yend = mean(amph_gradCPT, na.rm = TRUE)),
                color = "black", alpha = 1, size = 1) +
   labs(x = "", y = "D' (d prime)") +
-  scale_x_discrete(labels = c("PL", "MA")) +
+  scale_x_discrete(labels = c("Orientation", "MA")) +
   scale_y_continuous(breaks = c(1, 2, 3, 4, 5)) +
   theme(legend.position = "none",
         panel.grid.major = element_blank(),
@@ -205,20 +205,20 @@ behav_low_PL <- ggplot(all_behav_low_pl, aes(x = factor(1), y = PL_gradCPT)) +
   coord_cartesian(ylim = c(0, 5.4))
 
 
-behav_high_PL <- ggplot(all_behav_high_pl, aes(x = factor(1), y = PL_gradCPT)) +
+behav_high_PL <- ggplot(all_behav_high_pl, aes(x = factor(1), y = o_gradCPT)) +
   geom_jitter(color = "#d18f23", size = 5, alpha = 0.5, shape = 1,
               position = position_dodge(width = 0.2)) +
   geom_jitter(aes(x = factor(2), y = amph_gradCPT), 
               color = "#d18f23", size = 5, alpha = 0.5, shape = 16,
               position = position_dodge(width = 0.2)) +
-  geom_segment(aes(x = factor(1), y = PL_gradCPT, 
+  geom_segment(aes(x = factor(1), y = o_gradCPT, 
                    xend = factor(2), yend = amph_gradCPT),
                color = "black", alpha = 0.3) +
-  geom_segment(aes(x = factor(1), y = mean(PL_gradCPT, na.rm = TRUE),
+  geom_segment(aes(x = factor(1), y = mean(o_gradCPT, na.rm = TRUE),
                    xend = factor(2), yend = mean(amph_gradCPT, na.rm = TRUE)),
                color = "black", alpha = 1, size = 1) +
   labs(x = "", y = "D' (d prime)") +
-  scale_x_discrete(labels = c("PL", "MA")) +
+  scale_x_discrete(labels = c("Orientation", "MA")) +
   scale_y_continuous(breaks = c(1, 2, 3, 4, 5)) +
   theme(legend.position = "none",
         panel.grid.major = element_blank(),
@@ -238,18 +238,20 @@ plot_grid(behav_low_o, behav_high_o, behav_low_PL, behav_high_PL, ncol = 2)
 ```
 
 # t test statistics
+
 ```{r}
-t.test(all_behav_high_o$o_gradCPT, all_behav_high_o$PL_gradCPT, paired = TRUE)
-
-t.test(all_behav_low_o$o_gradCPT, all_behav_low_o$PL_gradCPT, paired = TRUE)
-
-t.test(all_behav_high_pl$o_gradCPT, all_behav_high_pl$PL_gradCPT, paired = TRUE)
-
-t.test(all_behav_low_pl$o_gradCPT, all_behav_low_pl$PL_gradCPT, paired = TRUE)
-
-
 t.test(all_behav$o_gradCPT, all_behav$PL_gradCPT, paired = TRUE)
 t.test(all_behav$o_gradCPT, all_behav$amph_gradCPT, paired = TRUE)
 t.test(all_behav$amph_gradCPT, all_behav$PL_gradCPT, paired = TRUE)
+```
+
+```{r}
+t.test(all_behav_high_o$amph_gradCPT, all_behav_high_o$PL_gradCPT, paired = TRUE)
+
+t.test(all_behav_low_o$amph_gradCPT, all_behav_low_o$PL_gradCPT, paired = TRUE)
+
+t.test(all_behav_high_pl$o_gradCPT, all_behav_high_pl$amph_gradCPT, paired = TRUE)
+
+t.test(all_behav_low_pl$o_gradCPT, all_behav_low_pl$amph_gradCPT, paired = TRUE)
 ```
 

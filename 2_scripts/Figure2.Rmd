@@ -721,6 +721,7 @@ highlow_HIGH <- ggplot(dataset_high, aes(x = factor(1), y = PL_highLow_norm)) +
 
 plot_grid(highlow_LOW, highlow_HIGH, ncol = 2)
 ```
+
 ```{r}
 t.test(dataset_high$amph_highLow, dataset_high$PL_highLow, paired = TRUE)
 

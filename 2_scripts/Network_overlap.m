@@ -16,8 +16,8 @@ pos_feat_avg(pos_feat_avg < 1) = 0;
 neg_feat_avg(neg_feat_avg < 1) = 0;
 
 % Load network difference data
-load('../3_results/network_diff_positive_rest.txt')
-load('../3_results/network_diff_negative_rest.txt')
+load('../3_results/stats/network_diff_positive_rest.txt')
+load('../3_results/stats/network_diff_negative_rest.txt')
 % For consistency, rename or store them as:
 network_diff_pos = network_diff_positive_rest;  
 network_diff_neg = network_diff_negative_rest;
